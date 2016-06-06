@@ -18,3 +18,10 @@ spec = do
       r0 <- wait a0
       r1 <- wait a1
       r0 ++ r1 `shouldBe` str0 ++ str1
+
+    it "allows to perform wait multiple times" $ do
+      let str = "hello"
+      a <- async $ return str
+      r0 <- wait a
+      r1 <- wait a
+      r0 ++ r1 `shouldBe` str ++ str
