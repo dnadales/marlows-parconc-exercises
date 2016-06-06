@@ -18,7 +18,6 @@ onException act what =
   -- since it guarantees the strict ordering w.r.t. other IO operations.
   act `catch` (\e -> do _ <- what; throw (e:: SomeException))
 
-
 -- | A call of the form @bracket init final act@ performs action @init@ first,
 -- then passes the result to @act@, and @act a@ gets executed, where @a@ is the
 -- value contained in @init@. Action @final a@ gets always executed, where the
