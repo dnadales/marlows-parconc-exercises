@@ -17,3 +17,10 @@ wait (Async mvar) = undefined
 
 waitCatch :: Async a -> IO (Either SomeException a)
 waitCatch = undefined
+
+waitEither :: Async a -> Async b -> IO (Either a b)
+waitEither = undefined
+
+waitAny :: [Async a] -> IO a
+waitAny = undefined
+

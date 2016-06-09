@@ -51,4 +51,42 @@ spec = do
       let exceptionStr = either show (const "") r
       exceptionStr `shouldBe` show MyException
 
+  describe "waitEither" $ do
+
+    it "returns the first action to complete (FATC)" $ do
+      mvar <- newEmptyMVar -- We use this MVar to block the right thread
+      la <- async $ return "foo"
+      ra <- async $ do takeMVar mvar; return 15
+      result <- waitEither la ra
+      result `shouldBe` (Left "foo")
+
+    it "throws an exception if the FATC threw an exception" $ (do
+      mvar <- newEmptyMVar -- We use this MVar to block the right thread
+      la <- async $ boom
+      ra <- async $ do takeMVar mvar; return 15
+      waitEither la ra)
+      `shouldThrow` myException
+
+  describe "waitAny" $ do
+
+    -- What about wait any with the empty list?
+
+    it "returns the first action to complete (FATC)" $ do
+      mvar <- newEmptyMVar -- We use this MVar to block the other threads
+      a0 <- async $ return "foo"
+      a1 <- async $ do takeMVar mvar; return "bar"
+      a2 <- async $ do takeMVar mvar; return "baz"
+      result <- waitAny [a0, a1, a2]
+      result `shouldBe` "foo"
+
+    it "throws an exception if the FATC threw an exception" $ (do
+      mvar <- newEmptyMVar
+      a0 <- async $ boom
+      a1 <- async $ do takeMVar mvar; return "bar"
+      a2 <- async $ do takeMVar mvar; return "baz"
+      waitAny [a0, a1, a2])
+      `shouldThrow` myException
+
+
+
 
