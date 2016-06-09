@@ -25,3 +25,18 @@ wait (Async mvar) = do
 
 waitCatch :: Async a -> IO (Either SomeException a)
 waitCatch (Async mvar) = readMVar mvar
+
+waitEither :: Async a -> Async b -> IO (Either a b)
+waitEither la ra = do
+  mvar <- newEmptyMVar
+  -- Note that for the left part, in case of successful completion, mvar will
+  -- contain: Right (Left someResult)
+  forkIO $ do r <- try (fmap Left (wait la)); putMVar mvar r
+  forkIO $ do r <- try (fmap Right (wait ra)); putMVar mvar r
+  wait (Async mvar)
+
+waitAny :: [Async a] -> IO a
+waitAny xs = do
+  mvar <- newEmptyMVar
+  mapM_ (\a -> forkIO $ do r <- try (wait a); putMVar mvar r) xs
+  wait (Async mvar)
