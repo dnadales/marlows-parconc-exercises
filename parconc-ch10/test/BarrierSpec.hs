@@ -23,9 +23,9 @@ spec = do
             inc counter
             barrier br
             atomically $ readTVar counter
-      _ <- mapConcurrently (const work) [0 .. numThreads - 1]
+      xs <- mapConcurrently (const work) [0 .. numThreads - 1]
       counter <- atomically $ readTVar counter
-      counter `shouldBe` numThreads
+      xs `shouldBe` replicate numThreads numThreads
 
     -- Is this the right way of handling exceptions?
     it ("throws an exeption in all other threads"
