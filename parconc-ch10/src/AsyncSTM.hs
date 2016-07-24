@@ -27,3 +27,9 @@ waitSTM a = do
 
 wait :: Async a -> IO a
 wait = atomically . waitSTM
+
+waitEither :: Async a -> Async b -> IO (Either a b)
+waitEither = undefined
+
+waitAny :: [Async a] -> IO a
+waitAny = undefined
