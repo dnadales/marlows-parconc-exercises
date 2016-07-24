@@ -29,7 +29,12 @@ wait :: Async a -> IO a
 wait = atomically . waitSTM
 
 waitEither :: Async a -> Async b -> IO (Either a b)
-waitEither = undefined
+waitEither aa ab =
+  atomically $
+  (Left <$> waitSTM aa)
+  `orElse`
+  (Right <$> waitSTM ab)
 
 waitAny :: [Async a] -> IO a
-waitAny = undefined
+waitAny as =
+  atomically $ foldr orElse retry $ map waitSTM as
