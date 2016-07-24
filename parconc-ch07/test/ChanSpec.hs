@@ -57,7 +57,6 @@ spec = do
       wait a0
       unGetChan ch val
       rVal `shouldBe` val
-      --expectationFailure "TODO: write this unit test"
       rVal2 <- readChan ch
       rVal2 `shouldBe` val
 
