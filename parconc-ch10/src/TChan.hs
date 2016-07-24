@@ -34,6 +34,3 @@ writeTChan (TChan _ tvw) x = do
   hole <- newTVar TNil
   writeTVar txs (TCons x hole)
   writeTVar tvw hole
-
-
-
