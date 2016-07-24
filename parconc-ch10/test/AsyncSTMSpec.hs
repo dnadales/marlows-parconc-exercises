@@ -1,9 +1,23 @@
+{-# LANGUAGE DeriveDataTypeable #-}
 -- |
 
 module AsyncSTMSpec where
 
 import           AsyncSTM
+import           Control.Exception
+import           Data.Typeable
 import           Test.Hspec
+
+data Ch10Exception = Ch10Exception String
+  deriving (Typeable, Show)
+
+instance Exception Ch10Exception
+
+boom :: IO a
+boom = throw (Ch10Exception "boom")
+
+withMessage :: String -> Selector Ch10Exception
+withMessage s (Ch10Exception str)  = s == str
 
 spec :: Spec
 spec = do
@@ -24,4 +38,9 @@ spec = do
       r1 <- wait a
       r0 ++ r1 `shouldBe` str ++ str
 
-
+    it "propagates exceptions to the waiting thread" $ do
+      (do
+          a <- async $ boom
+          wait a
+        )
+      `shouldThrow` (withMessage "boom")
