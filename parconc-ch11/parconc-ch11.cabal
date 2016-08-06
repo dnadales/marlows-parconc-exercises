@@ -16,8 +16,11 @@ cabal-version:       >=1.10
 library
   hs-source-dirs:      src
   exposed-modules:     Timeout2
-  build-depends:       async >= 2.1.0,
-                       base >= 4.7 && < 5
+                     , AsyncFunctor
+                     , Exercises
+  build-depends:       async >= 2.1.0
+                     , base >= 4.7 && < 5
+                     , stm
   default-language:    Haskell2010
 
 executable parconc-ch11-exe
