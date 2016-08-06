@@ -61,6 +61,8 @@ spec = do
   -- Note that this test will fail (both for Marlow's and my solution). Running
   -- in the context of the current thread seemed to be a property of the
   -- previous implementation of timeout (Chapter 9).
+  --
+  -- The above is clarified in page 202 of Marlows' book.
     it "runs m in the context of the current thread" $ do
       tid <- myThreadId
       r <- timeout 100 $ do tid' <- myThreadId; return (tid == tid')
