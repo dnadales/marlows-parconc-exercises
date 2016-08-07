@@ -8,6 +8,6 @@ main :: IO ()
 main = do
   --parent
   --tidyParent
-  xs <- listsLengths2 (replicate 5000 "!")
+  xs <- listsLengths3 (replicate 50 "!")
   putStrLn $ show (length xs)
 

@@ -4,6 +4,7 @@ module Exercises where
 
 import           Control.Concurrent
 import           Control.Concurrent.Async
+import           Prelude                  hiding (words)
 
 -- | We experiment with a program that kills itself and leaves an orphan
 -- child(ren). This behavior can be changed using `withAsync`.
@@ -95,15 +96,23 @@ listsLengths2 xss = mapConcurrently  worker xss
 mkAsyncs :: [IO a] -> IO [Async a]
 mkAsyncs ios = mapM async ios
 
--- Collect the results as they become available.
+-- | This function does not return the results as they become available.
+-- Instead it will sort the results by completion time (in a rather inefficient
+-- way).
 collect :: [Async a] -> IO [a]
 collect [] = return []
 collect asyncs = do
   (a, r) <- waitAny asyncs
   rs <- collect (filter (/= a) asyncs)
   return (r:rs)
+-- | However, such a function might not be useful in the context of concurrent
+-- programming. It is better to adopt the same strategy as with futures (in
+-- Scala), when we use a flatMap to describe a computation on a future result.
+--
+--     http://stackoverflow.com/questions/38813012/collecting-the-async-results-as-they-become-available
 
 listsLengths3 :: [[a]] -> IO ([Int])
 listsLengths3 xss = do
   asyncs <- mkAsyncs (map worker xss)
   collect asyncs
+
