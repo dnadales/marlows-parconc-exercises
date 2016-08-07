@@ -13,3 +13,4 @@ spec = do
 
       expectationFailure "Implement me!"
 
+-- TODO: test listLengths Exercises.words == map length Exercises.words

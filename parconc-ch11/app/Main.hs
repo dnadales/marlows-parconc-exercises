@@ -6,6 +6,8 @@ import           Exercises
 -- `tidyParent`.
 main :: IO ()
 main = do
-  parent
+  --parent
   --tidyParent
+  xs <- listsLengths2 (replicate 5000 "!")
+  putStrLn $ show (length xs)
 
