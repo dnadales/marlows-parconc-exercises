@@ -15,6 +15,10 @@ listen h = do
   where
     loop xs = do
       line <- hGetLine h
+      -- FIXME: here we are opening the doors for inconsistencies. If the
+      -- server response that signals the termination of the connection changes
+      -- at the server, but we forget to modify it here, this function will not
+      -- work as expected.
       if line == "bye"
         then return xs
         else loop (line:xs)

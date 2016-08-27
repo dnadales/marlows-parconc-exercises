@@ -19,6 +19,7 @@ library
                      , Client
                      , Config
                      , Horde
+                     , Message
   build-depends:       base >= 4.7 && < 5
                      , network >= 2.6
   default-language:    Haskell2010

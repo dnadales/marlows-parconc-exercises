@@ -4,10 +4,15 @@ module Server where
 
 import           Config
 import           Control.Concurrent (forkFinally, forkIO)
-import           Control.Monad      (forever)
+import           Control.Monad      (forever, liftM)
+import           Message
 import           Network
 import           System.IO
 import           Text.Printf
+
+mkAnswer :: Message -> String
+mkAnswer (Multiply n) = show $ 2 * n
+mkAnswer c = show $ Error ("unknown command" ++ show c)
 
 talk :: Handle -> IO ()
 talk h = do
@@ -15,11 +20,15 @@ talk h = do
   loop
   where
     loop = do
-      line <- hGetLine h
-      if line == "end"
-        then hPutStrLn h "bye"
-        else do hPutStrLn h (show $ 2 * (read line :: Integer))
-                loop
+      message <- liftM parse (hGetLine h)
+      case message of
+        Right End -> hPutStrLn h (show Bye)
+        Right c -> do
+          hPutStrLn h (mkAnswer c)
+          loop
+        Left e -> do
+          hPutStrLn h (show $ Error ("error while parsing the command: " ++ e))
+          loop
 
 serve :: IO ()
 -- | From the Network.Socket.Internal library: With older versions of the
