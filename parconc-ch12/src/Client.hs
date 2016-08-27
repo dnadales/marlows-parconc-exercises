@@ -23,16 +23,17 @@ talk :: [String] -> Handle -> IO ()
 talk xs h = mapM_ (hPutStrLn h) xs >> hPutStrLn h "end"
 
 
-interact :: [String] -> IO ()
+interact :: [String] -> IO [String]
 interact xs = withSocketsDo $ do
   h <- connectTo Config.host Config.port
   _ <- forkIO $ talk xs h
   res <- try (listen h) :: IO (Either IOException [String])
   putStrLn "Terminating client"
-  case res of
-    Left e -> putStrLn (show e)
-    Right rs -> putStrLn (show rs)
   hClose h
+  case res of
+    Left e -> return [show e]
+    Right rs -> return rs
+
 
 
 

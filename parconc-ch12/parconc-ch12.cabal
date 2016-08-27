@@ -18,10 +18,19 @@ library
   exposed-modules:     Server
                      , Client
                      , Config
+                     , Horde
   build-depends:       base >= 4.7 && < 5
                      , network >= 2.6
   default-language:    Haskell2010
 
+executable horde-app
+  hs-source-dirs:      app
+  main-is:             HordeApp.hs
+  ghc-options:         -threaded -rtsopts -with-rtsopts=-N
+  build-depends:       base
+                     , parconc-ch12
+  default-language:    Haskell2010
+  
 executable client-app
   hs-source-dirs:      app
   main-is:             ClientApp.hs
