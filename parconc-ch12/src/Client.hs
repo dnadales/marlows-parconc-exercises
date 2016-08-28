@@ -4,7 +4,7 @@ module Client where
 
 import qualified Config
 import           Control.Concurrent (forkFinally, forkIO, threadDelay)
-import           Control.Exception  (IOException, catch, throwIO, try)
+import           Control.Exception  (IOException, bracket, catch, throwIO, try)
 import           Control.Monad      (liftM)
 import           Message
 import           Network
@@ -26,11 +26,29 @@ listen h = do
             then return xs
             else loop (message:xs)
 
+listens :: Handle -> [IO Message]
+listens h = listenAct : listens h
+  where listenAct = do
+            hSetBuffering h LineBuffering
+            eMessage <- liftM parse (hGetLine h)
+            case eMessage of
+              Left e -> return $ Error (show e)
+              Right message -> return message
+
+listenN :: Int -> Handle -> IO [Message]
+listenN n h = gListenN n [] (listens h)
+  where gListenN 0 xs _ = return xs
+        gListenN k xs acts = do
+          let listenAct = head acts
+          message <- listenAct
+          case message of
+            Bye -> return xs
+            _ -> gListenN (k - 1) (message : xs) (tail acts)
+
 talk :: [Message] -> Handle -> IO ()
 talk xs h = mapM_ (hPutMessage h) xs >> hPutMessage h End
 
-
--- Wait for the server to be ready
+-- | Wait for the server to be ready.
 waitForServer :: Int -> IO ()
 waitForServer n =
   (connectTo Config.host Config.port >>= \h -> hClose h)
@@ -41,12 +59,41 @@ waitForServer n =
   )
 
 
+-- | Wait till the server has the given number of connected clients.
+waitForNConnectedClients :: Int -> Int -> IO ()
+waitForNConnectedClients n numClients = do
+  threadDelay (2 * 10^6)
+  -- FIXME: implement this behavior!
+  -- waitForServer n
+  -- bracket (connectTo Config.host Config.port) (\h -> hClose h)
+  --   (\h ->  do
+  --       hPutMessage h GetNClients
+  --       eMessage <- hGetMessage h
+  --       case eMessage of
+  --         Right (NClients clientsAtServer) ->
+  --           if (clientsAtServer == numClients)
+  --           then return ()
+  --           else threadDelay (10^6) >> waitForNConnectedClients (n-1) numClients
+  --         _  -> threadDelay (10^6) >> waitForNConnectedClients (n-1) numClients
+  --   )
+
+
 interact :: [Message] -> IO [Message]
 interact xs = withSocketsDo $ do
   h <- connectTo Config.host Config.port
   _ <- forkIO $ talk xs h
   res <- try (listen h) :: IO (Either IOException [Message])
   -- putStrLn $ "Terminating client:" ++ show res
+  hClose h
+  case res of
+    Left e -> return [Error (show e)]
+    Right rs -> return (reverse rs)
+
+-- | Listen a given number of messages.
+justListen :: Int -> IO [Message]
+justListen n = withSocketsDo $ do
+  h <- connectTo Config.host Config.port
+  res <- try (listenN n h) :: IO (Either IOException [Message])
   hClose h
   case res of
     Left e -> return [Error (show e)]

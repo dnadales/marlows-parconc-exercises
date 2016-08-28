@@ -1,6 +1,6 @@
 module Main where
 
-import           Server
+import           ServerIO
 
 main :: IO ()
 main = serve

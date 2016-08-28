@@ -22,4 +22,4 @@ spec = do
       _ <- forkIO serve -- Start the server.
       waitForServer 10
       res <- changeTwice testList n m
-      results (res) `shouldBe` (map (*n) xs)++(map (*m) xs)
+      results (res) `shouldBe` (map (*n) xs) ++ (map (*m) xs)

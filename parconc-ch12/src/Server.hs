@@ -43,7 +43,7 @@ talk h (StateVar sv) = do
           hPutMessage h (Error ("error while parsing the command: " ++ e))
 
 serve :: IO ()
--- | From the Network.Socket.Internal library: With older versions of the
+-- | From the 'Network.Socket.Internal' library: With older versions of the
 -- network library on Windows operating systems, the networking subsystem must
 -- be initialised using withSocketsDo before any networking operations can be
 -- used.

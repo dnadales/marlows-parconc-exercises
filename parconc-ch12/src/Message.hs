@@ -12,12 +12,17 @@ data Message = End              -- End the session with the server.
              | Factor Integer   -- Change the multiplier factor.
              | Result Integer   -- The value returned by the server.
              | Multiply Integer -- Multiply the number by the multiplier factor.
+             | GetNClients      -- Query the number of clients
+             | NClients Int     -- Returned number of clients by the server.
              | Error String     -- Used to communicate errors.
              deriving (Eq)
 
+-- FIXME: we are also opening the doors for inconsistencies between shown and
+-- parse. Could we avoid this?
 instance Show Message where
   show End          = "end"
   show Bye          = "bye"
+  show GetNClients     = "nclients"
   show (Factor n)   = '*' : (show n)
   show (Multiply n) = show n
   show (Result n)   = '=' : show n
@@ -26,6 +31,7 @@ instance Show Message where
 parse :: String -> Either String Message
 parse "end" = Right End
 parse "bye" = Right Bye
+parse "nclients" = Right GetNClients
 parse ('!' : xs) = Right (Error xs)
 parse ('*' : xs) = readEither xs >>= \i -> Right (Factor i)
 parse ('=' : xs) = readEither xs >>= \i -> Right (Result i)
@@ -43,6 +49,14 @@ getResult :: Message -> Maybe Integer
 getResult (Result n) = Just n
 getResult _ = Nothing
 
+getFactors :: Message -> Maybe Integer
+getFactors (Factor n) = Just n
+getFactors _ = Nothing
+
 -- | Get the numeric values out of a list of messages.
 results :: [Message] -> [Integer]
 results = catMaybes . (map getResult)
+
+-- | Get the factor changes out of a list of messages.
+changes :: [Message] -> [Integer]
+changes = catMaybes . (map getFactors)
