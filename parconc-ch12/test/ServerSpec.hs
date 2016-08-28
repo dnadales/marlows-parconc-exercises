@@ -2,6 +2,7 @@
 
 module ServerSpec where
 
+import           Client             (waitForServer)
 import           Control.Concurrent (forkIO)
 import           Horde              (changeTwice)
 import           Message            (results)
@@ -18,6 +19,7 @@ spec = do
       let m = 3
           n = 8
           xs = testList
-      _ <- forkIO serve
+      _ <- forkIO serve -- Start the server.
+      waitForServer 10
       res <- changeTwice testList n m
       results (res) `shouldBe` (map (*n) xs)++(map (*m) xs)

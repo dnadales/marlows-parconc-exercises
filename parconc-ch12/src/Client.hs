@@ -3,8 +3,8 @@
 module Client where
 
 import qualified Config
-import           Control.Concurrent (forkFinally, forkIO)
-import           Control.Exception  (IOException, try)
+import           Control.Concurrent (forkFinally, forkIO, threadDelay)
+import           Control.Exception  (IOException, catch, throwIO, try)
 import           Control.Monad      (liftM)
 import           Message
 import           Network
@@ -30,12 +30,23 @@ talk :: [Message] -> Handle -> IO ()
 talk xs h = mapM_ (hPutMessage h) xs >> hPutMessage h End
 
 
+-- Wait for the server to be ready
+waitForServer :: Int -> IO ()
+waitForServer n =
+  (connectTo Config.host Config.port >>= \h -> hClose h)
+  `catch`
+  (\ex -> if n < 0
+          then throwIO (ex :: IOException)
+          else threadDelay (10^6) >> waitForServer (n - 1)
+  )
+
+
 interact :: [Message] -> IO [Message]
 interact xs = withSocketsDo $ do
   h <- connectTo Config.host Config.port
   _ <- forkIO $ talk xs h
   res <- try (listen h) :: IO (Either IOException [Message])
-  putStrLn $ "Terminating client:" ++ show res
+  -- putStrLn $ "Terminating client:" ++ show res
   hClose h
   case res of
     Left e -> return [Error (show e)]
