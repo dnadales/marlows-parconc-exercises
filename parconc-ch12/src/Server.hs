@@ -10,9 +10,9 @@ import           Network
 import           System.IO
 import           Text.Printf
 
-mkAnswer :: Message -> String
-mkAnswer (Multiply n) = show $ 2 * n
-mkAnswer c = show $ Error ("unknown command" ++ show c)
+mkAnswer :: Message -> Message
+mkAnswer (Multiply n) = Result (2 * n)
+mkAnswer c = Error ("unknown command: '" ++ show c ++ "'")
 
 talk :: Handle -> IO ()
 talk h = do
@@ -22,12 +22,12 @@ talk h = do
     loop = do
       message <- liftM parse (hGetLine h)
       case message of
-        Right End -> hPutStrLn h (show Bye)
+        Right End -> hPutMessage h Bye
         Right c -> do
-          hPutStrLn h (mkAnswer c)
+          hPutMessage h (mkAnswer c)
           loop
         Left e -> do
-          hPutStrLn h (show $ Error ("error while parsing the command: " ++ e))
+          hPutMessage h (Error ("error while parsing the command: " ++ e))
           loop
 
 serve :: IO ()
