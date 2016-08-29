@@ -9,6 +9,7 @@ import           Control.Monad      (liftM)
 import           Message
 import           Network
 import           System.IO
+import           Text.Printf        (printf)
 
 listen :: Handle -> IO [Message]
 listen h = do
@@ -51,7 +52,10 @@ talk xs h = mapM_ (hPutMessage h) xs >> hPutMessage h End
 -- | Wait for the server to be ready.
 waitForServer :: Int -> IO ()
 waitForServer n =
-  (connectTo Config.host Config.port >>= \h -> hClose h)
+  withSocketsDo $ do
+  (connectTo Config.host Config.port >>= \h -> do
+      putStrLn $ "Sending message on handle " ++ show h
+      hPutMessage h End)
   `catch`
   (\ex -> if n < 0
           then throwIO (ex :: IOException)
@@ -61,21 +65,20 @@ waitForServer n =
 
 -- | Wait till the server has the given number of connected clients.
 waitForNConnectedClients :: Int -> Int -> IO ()
-waitForNConnectedClients n numClients = do
-  threadDelay (2 * 10^6)
-  -- FIXME: implement this behavior!
-  -- waitForServer n
-  -- bracket (connectTo Config.host Config.port) (\h -> hClose h)
-  --   (\h ->  do
-  --       hPutMessage h GetNClients
-  --       eMessage <- hGetMessage h
-  --       case eMessage of
-  --         Right (NClients clientsAtServer) ->
-  --           if (clientsAtServer == numClients)
-  --           then return ()
-  --           else threadDelay (10^6) >> waitForNConnectedClients (n-1) numClients
-  --         _  -> threadDelay (10^6) >> waitForNConnectedClients (n-1) numClients
-  --   )
+waitForNConnectedClients n numClients = withSocketsDo $ do
+  bracket (connectTo Config.host Config.port) (\h -> hPutMessage h End) (loop n)
+  where loop k h=  do
+          hSetBuffering h LineBuffering
+          hPutMessage h GetNClients
+          putStrLn $ "Trying to read from " ++ (show h)
+          eMessage <- hGetMessageSafe h -- WARNING: we are blocking here!
+          case eMessage of
+            Right (NClients clientsAtServer) -> do
+              printf "clients at server %d, expected clients %d." clientsAtServer numClients
+              if (numClients <= clientsAtServer)
+                then return ()
+                else threadDelay (10^6) >> loop (k - 1) h
+            _  -> threadDelay (10^6) >> loop (k - 1) h
 
 
 interact :: [Message] -> IO [Message]

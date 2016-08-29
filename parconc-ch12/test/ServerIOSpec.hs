@@ -36,7 +36,7 @@ spec = do
       a <- async $ spawnListeners numListeners (length factors)
       -- FIXME: we need to ensure that all the clients are connected when the
       -- changer is spawned!
-      waitForNConnectedClients 10 numListeners
+      waitForNConnectedClients 10 (numListeners + 1)
       spawnChanger factors
       ress <- wait a
       killThread sTid -- Kill the server

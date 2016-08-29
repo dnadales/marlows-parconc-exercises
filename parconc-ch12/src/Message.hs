@@ -2,9 +2,11 @@
 
 module Message where
 
-import           Control.Monad (liftM)
-import           Data.Maybe    (catMaybes)
-import           System.IO     (Handle, hGetLine, hPutStrLn)
+import           Control.Concurrent (threadDelay)
+import           Control.Exception  (IOException, try)
+import           Control.Monad      (liftM)
+import           Data.Maybe         (catMaybes)
+import           System.IO          (Handle, hGetLine, hPutStrLn)
 import           Text.Read
 
 data Message = End              -- End the session with the server.
@@ -22,8 +24,9 @@ data Message = End              -- End the session with the server.
 instance Show Message where
   show End          = "end"
   show Bye          = "bye"
-  show GetNClients     = "nclients"
-  show (Factor n)   = '*' : (show n)
+  show GetNClients  = "nclients"
+  show (NClients n) = '#' : show n
+  show (Factor n)   = '*' : show n
   show (Multiply n) = show n
   show (Result n)   = '=' : show n
   show (Error e)    = '!' : e
@@ -35,11 +38,25 @@ parse "nclients" = Right GetNClients
 parse ('!' : xs) = Right (Error xs)
 parse ('*' : xs) = readEither xs >>= \i -> Right (Factor i)
 parse ('=' : xs) = readEither xs >>= \i -> Right (Result i)
+parse ('#' : xs) = readEither xs >>= \i -> Right (NClients i)
 parse xs = readEither xs >>= \i -> Right (Multiply i)
 
 -- | Read a message from the given handle, and parse it.
 hGetMessage :: Handle -> IO (Either String Message)
 hGetMessage h = liftM parse (hGetLine h)
+
+hGetMessageSafe :: Handle -> IO (Either String Message)
+hGetMessageSafe h = do
+  result <- try (hGetMessage h)
+  case result of
+    Left e -> do
+      threadDelay (3 * 10^6)
+      putStrLn $ "got: " ++ (show (e :: IOException))
+      putStrLn "retrying..."
+      hGetMessageSafe h
+    Right eM -> return eM
+
+
 
 -- | Put a message in the handle.
 hPutMessage :: Handle -> Message -> IO ()

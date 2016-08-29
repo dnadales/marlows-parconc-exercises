@@ -1,4 +1,4 @@
--- | Server that communicates back to the clients.
+-- | Server that communicates back to the clients.x
 
 module ServerIO where
 
@@ -6,7 +6,8 @@ import           Config
 import           Control.Concurrent (MVar, forkFinally, forkIO, modifyMVar,
                                      modifyMVar_, newMVar, putMVar, readMVar,
                                      takeMVar, threadDelay)
-import           Control.Exception  (bracket)
+import           Control.Exception  (IOException, SomeException, bracket,
+                                     handle, onException, throw)
 import           Control.Monad      (forever, liftM)
 import           Data.List          (delete)
 import           Message
@@ -35,10 +36,16 @@ talk h (StateVar sv) = do
     loop = do
       message <- liftM parse (hGetLine h)
       case message of
-        Right End ->
+        Right End -> do
+          putStrLn $ "Saying goodbye. Handle " ++ show h
           hPutMessage h Bye
         _  -> do
-          handleMessage message
+          handle (\e -> do
+                     putStrLn $ "Error when handling " ++ show message
+                     putStrLn $ "Error was: " ++ show (e :: SomeException)
+                     throw e
+                 )
+            (handleMessage message)
           loop
     -- Handle messages that do not cause server termination.
     handleMessage message = do
@@ -52,6 +59,7 @@ talk h (StateVar sv) = do
           state <- readMVar sv
           hPutMessage h $ Result (factor state * n)
         Right (GetNClients) -> do
+          putStrLn "Got 'GetNClients'"
           state <- readMVar sv
           hPutMessage h $ NClients (length (handles state))
         Right c -> do
@@ -76,7 +84,7 @@ serve = withSocketsDo $ do
         (handle, host, port) <- accept socket
         -- Add the handle to the list of handles.
         modifyMVar_ sv (\state -> return $ addHandle handle state)
-        printf "Accepted connection from %s: %s\n" host (show port)
+        printf "Accepted connection from %s: %s - handle %s\n" host (show port) (show handle)
         forkFinally (talk handle (StateVar sv)) $ \_ -> do
           printf "Closing connection with %s: %s\n" host (show port)
           modifyMVar_ sv (\state -> return $ removeHandle handle state)
