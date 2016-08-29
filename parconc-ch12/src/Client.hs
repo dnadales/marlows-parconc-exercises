@@ -55,7 +55,9 @@ waitForServer n =
   withSocketsDo $ do
   (connectTo Config.host Config.port >>= \h -> do
       putStrLn $ "Sending message on handle " ++ show h
-      hPutMessage h End)
+      hPutMessage h End
+      hClose h
+    )
   `catch`
   (\ex -> if n < 0
           then throwIO (ex :: IOException)
@@ -66,7 +68,7 @@ waitForServer n =
 -- | Wait till the server has the given number of connected clients.
 waitForNConnectedClients :: Int -> Int -> IO ()
 waitForNConnectedClients n numClients = withSocketsDo $ do
-  bracket (connectTo Config.host Config.port) (\h -> hPutMessage h End) (loop n)
+  bracket (connectTo Config.host Config.port) (\h -> hPutMessage h End >> hClose h) (loop n)
   where loop k h=  do
           hSetBuffering h LineBuffering
           hPutMessage h GetNClients
