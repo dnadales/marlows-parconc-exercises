@@ -21,6 +21,7 @@ library
                      , Horde
                      , Message
                      , ServerIO
+                     , ServerChan
   build-depends:       base >= 4.7 && < 5
                      , network >= 2.6
                      , async >= 2.1

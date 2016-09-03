@@ -75,8 +75,8 @@ talkWrong h (StateVar sv) = do
 notifyFactorChangeWrong :: Integer -> [Handle] -> IO ()
 notifyFactorChangeWrong n hs = mapM_ (forkIO) (map (`hPutMessage` (Factor n)) hs)
 
-talk :: Handle -> StateVar -> IO ()
-talk h (StateVar sv) = do
+talkOneBigLock :: Handle -> StateVar -> IO ()
+talkOneBigLock h (StateVar sv) = do
   hSetBuffering h LineBuffering
   loop
   where
@@ -116,6 +116,8 @@ talk h (StateVar sv) = do
 
 notifyFactorChange :: Integer -> [Handle] -> IO ()
 notifyFactorChange n hs = mapConcurrently (`hPutMessage` (Factor n)) hs >> return ()
+
+talk = talkOneBigLock
 
 serve :: IO ()
 serve = withSocketsDo $ do
