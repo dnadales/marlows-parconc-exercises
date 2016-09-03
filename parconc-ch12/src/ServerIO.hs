@@ -3,13 +3,15 @@
 module ServerIO where
 
 import           Config
-import           Control.Concurrent (MVar, forkFinally, forkIO, modifyMVar,
-                                     modifyMVar_, newMVar, putMVar, readMVar,
-                                     takeMVar, threadDelay)
-import           Control.Exception  (IOException, SomeException, bracket,
-                                     handle, onException, throw)
-import           Control.Monad      (forever, liftM)
-import           Data.List          (delete)
+import           Control.Concurrent       (MVar, forkFinally, forkIO,
+                                           modifyMVar, modifyMVar_, newMVar,
+                                           putMVar, readMVar, takeMVar,
+                                           threadDelay)
+import           Control.Concurrent.Async (mapConcurrently)
+import           Control.Exception        (IOException, SomeException, bracket,
+                                           handle, onException, throw)
+import           Control.Monad            (forever, liftM)
+import           Data.List                (delete)
 import           Message
 import           Network
 import           System.IO
@@ -28,8 +30,11 @@ removeHandle handle state = state {handles = delete handle (handles state)}
 
 newtype StateVar = StateVar (MVar State)
 
-talk :: Handle -> StateVar -> IO ()
-talk h (StateVar sv) = do
+-- | Wrong version of talk, which does not guarantee that the order of
+-- factor-changes-requests received by the clients is the same as the order in
+-- which the factor-changes-requests arrived at the server.
+talkWrong :: Handle -> StateVar -> IO ()
+talkWrong h (StateVar sv) = do
   hSetBuffering h LineBuffering
   loop
   where
@@ -67,9 +72,50 @@ talk h (StateVar sv) = do
         Left e -> do
           hPutMessage h (Error ("error while parsing: " ++ e))
 
-notifyFactorChange :: Integer -> [Handle] -> IO ()
-notifyFactorChange n hs = mapM_ (forkIO) (map (`hPutMessage` (Factor n)) hs)
+notifyFactorChangeWrong :: Integer -> [Handle] -> IO ()
+notifyFactorChangeWrong n hs = mapM_ (forkIO) (map (`hPutMessage` (Factor n)) hs)
 
+talk :: Handle -> StateVar -> IO ()
+talk h (StateVar sv) = do
+  hSetBuffering h LineBuffering
+  loop
+  where
+    loop = do
+      message <- liftM parse (hGetLine h)
+      case message of
+        Right End -> do
+          putStrLn $ "Saying goodbye. Handle " ++ show h
+          hPutMessage h Bye
+        _  -> do
+          handle (\e -> do
+                     putStrLn $ "Error when handling " ++ show message
+                     putStrLn $ "Error was: " ++ show (e :: SomeException)
+                     throw e
+                 )
+            (handleMessage message)
+          loop
+    -- Handle messages that do not cause server termination.
+    handleMessage message = do
+      case message of
+        Right (Factor n) -> do
+          state <- takeMVar sv
+          notifyFactorChange n (handles state)
+          let newState = state {factor = n}
+          putMVar sv newState
+        Right (Multiply n) -> do
+          state <- readMVar sv
+          hPutMessage h $ Result (factor state * n)
+        Right (GetNClients) -> do
+          putStrLn "Got 'GetNClients'"
+          state <- readMVar sv
+          hPutMessage h $ NClients (length (handles state))
+        Right c -> do
+          hPutMessage h $ Error ("unknown command: '" ++ show c ++ "'")
+        Left e -> do
+          hPutMessage h (Error ("error while parsing: " ++ e))
+
+notifyFactorChange :: Integer -> [Handle] -> IO ()
+notifyFactorChange n hs = mapConcurrently (`hPutMessage` (Factor n)) hs >> return ()
 
 serve :: IO ()
 serve = withSocketsDo $ do

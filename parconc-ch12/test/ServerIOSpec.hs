@@ -34,8 +34,6 @@ spec = do
       sTid <- forkIO serve -- Start the server.
       waitForServer 10
       a <- async $ spawnListeners numListeners (length factors)
-      -- FIXME: we need to ensure that all the clients are connected when the
-      -- changer is spawned!
       waitForNConnectedClients 10 (numListeners + 1)
       spawnChanger factors
       ress <- wait a

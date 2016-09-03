@@ -66,6 +66,14 @@ waitForServer n =
 
 
 -- | Wait till the server has the given number of connected clients.
+--
+-- Trying to implement this functionality we observed two things:
+--
+--   - when working with sockets, we shouldn't see end-of-file as long as the
+--     handle is open.
+--
+--   - handles should be closed at both ends.
+
 waitForNConnectedClients :: Int -> Int -> IO ()
 waitForNConnectedClients n numClients = withSocketsDo $ do
   bracket (connectTo Config.host Config.port) (\h -> hPutMessage h End >> hClose h) (loop n)
