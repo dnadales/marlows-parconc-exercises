@@ -36,12 +36,12 @@ serve = withSocketsDo $ do
           \res -> do
             case res of
               Left e -> do
-                putStrLn $ show (e :: SomeException)
+                putStrLn $ "Server thread aborted with error: " ++ show (e :: SomeException)
               _ -> return ()
             hClose handle
 
--- TODO: use the reader monad to pass state around (transformer in this case,
--- since we're using the IO monad as well).
+-- Possible exercise: use the reader monad to pass state around (transformer in
+-- this case, since we're using the IO monad as well).
 
 talk :: Handle -> Chan Message -> Integer -> IO ()
 talk h ch factor =  do
@@ -74,7 +74,6 @@ talk h ch factor =  do
           return f
     listenForFactorChanges = do
       Factor n <- readChan ch
-      putStrLn $  "Got factor " ++ show n
       hPutMessage h (Factor n)
       listenForFactorChanges
 

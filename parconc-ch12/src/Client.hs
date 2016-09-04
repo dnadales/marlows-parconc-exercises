@@ -56,7 +56,7 @@ waitForServer n =
   (connectTo Config.host Config.port >>= \h -> do
       putStrLn $ "Sending message on handle " ++ show h
       hPutMessage h End
-      hClose h
+      -- hClose h
     )
   `catch`
   (\ex -> if n < 0
@@ -67,12 +67,14 @@ waitForServer n =
 
 -- | Wait till the server has the given number of connected clients.
 --
--- Trying to implement this functionality we observed two things:
+-- Trying to implement this functionality we observed:
 --
 --   - when working with sockets, we shouldn't see end-of-file as long as the
 --     handle is open.
 --
---   - handles should be closed at both ends.
+-- It is not clear however whether handles should be closed at both ends. When
+-- running the tests on Marlows implementation I saw an error in the 'receive'
+-- function since it was trying to read from a closed handle.
 
 waitForNConnectedClients :: Int -> Int -> IO ()
 waitForNConnectedClients n numClients = withSocketsDo $ do
@@ -107,6 +109,7 @@ justListen :: Int -> IO [Message]
 justListen n = withSocketsDo $ do
   h <- connectTo Config.host Config.port
   res <- try (listenN n h) :: IO (Either IOException [Message])
+  hPutMessage h End
   hClose h
   case res of
     Left e -> return [Error (show e)]
