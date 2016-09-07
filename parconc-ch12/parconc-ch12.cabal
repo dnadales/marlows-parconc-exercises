@@ -24,6 +24,7 @@ library
                      , ServerChan
                      , ServerSTM
                      , ServerSTMByMarlow
+                     , MyChatServer
   build-depends:       base >= 4.7 && < 5
                      , network >= 2.6
                      , async >= 2.1
