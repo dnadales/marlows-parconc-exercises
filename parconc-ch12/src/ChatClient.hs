@@ -2,17 +2,24 @@
 
 module ChatClient where
 
+import           Config
+import           Control.Concurrent.Async
 import           MyChatServer
+import           Network
+import           System.IO
 
-data ChatClient
+data ChatClient = ChatClient (Async [ChatResponse]) Handle
 
 -- | Creates a new connection with th chat server.
 connect :: ClientName -> IO ChatClient
-connect = undefined
+connect name = do
+  h <- connectTo Config.host Config.port
+  a <- async $ listen h
+  return (ChatClient a h)
 
--- | Sends a chat command to the server.
+-- | Sends a list of chat commands to the server.
 send :: ChatClient -> [ChatCommand] -> IO ()
-send = undefined
+send (ChatClient _ h) cs = mapM_ (h ! ) cs
 
 -- | Get all the responses from the server, emptying the inbox.
 getAllResponses :: ChatClient -> IO [ChatResponse]
@@ -25,3 +32,7 @@ waitForNClients = undefined
 -- | Disconnect the client from the server.
 disconnect :: ChatClient -> IO ()
 disconnect = undefined
+
+
+listen :: Handle -> IO [ChatResponse]
+listen = undefined
