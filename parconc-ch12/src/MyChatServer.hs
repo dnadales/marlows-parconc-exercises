@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 -- | My attempt to write a simple chat server, as decribed in Chapter 12.
 
 module MyChatServer
@@ -6,6 +7,11 @@ module MyChatServer
   , waitForChatServer
   , stopChatServer
   , defaultDelay
+  , ChatCommand (..)
+  , ChatResponse (..)
+  , ClientName
+  , Content
+  , isMessage
   ) where
 
 import           Config
@@ -13,10 +19,30 @@ import           Control.Concurrent
 import           Control.Concurrent.Async
 import           Control.Exception
 import           Control.Monad
+import qualified Data.ByteString          as B
 import           Network
 import           System.IO
 
 newtype ChatServer = MkChatServer ThreadId
+
+type Content = B.ByteString
+type ClientName = B.ByteString
+
+data ChatCommand = Tell ClientName Content
+                 | Kick ClientName
+                 | Quit
+                 | Broadcast Content
+                 | OnlineUsers -- How many users are connected?
+
+data ChatResponse = Message {from :: ClientName, to :: ClientName, body:: Content}
+                  | Connected ClientName
+                  | Disconnected ClientName
+                  | NrUsers Int -- Response with the number of active users.
+                  deriving (Eq, Show, Ord)
+
+isMessage :: ChatResponse -> Bool
+isMessage (Message _ _ _) = True
+isMessage _ = False
 
 defaultDelay :: IO ()
 defaultDelay = threadDelay (10^6)
