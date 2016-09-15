@@ -26,6 +26,8 @@ import           Control.Monad
 import           Data.Attoparsec.ByteString.Char8
 import qualified Data.ByteString.Char8            as C
 import           Data.Char
+import           Data.Monoid
+import qualified Data.Scientific                  as Scientific
 import           Data.Word
 import           Network
 import           Prelude                          hiding (takeWhile)
@@ -47,18 +49,17 @@ data ChatCommand = Tell ClientName Content
                  | Broadcast Content
                  deriving (Show)
 
+
+-- TODO: use a serialization package.
 class Serializable a where
   serialize :: a -> C.ByteString
   deserialize :: C.ByteString -> a
 
-
--- TODO: use a serialization package.
-
--- TODO: sanitize input: trim all line breaks from the command and client
--- names.
 instance Serializable ChatCommand where
-  serialize (Tell n c) =  "/tell " `C.append` n `C.append` " " `C.append` c
-  serialize (Kick n) =  "/kick " `C.append` n
+  -- TODO: sanitize input: trim all line breaks from the command and client
+  -- names.
+  serialize (Tell n c) =  "/tell " <> n <> " " <> c
+  serialize (Kick n) =  "/kick  " <>  n
   serialize Quit = "/quit"
   serialize Close = "/close"
   serialize OnlineUsers = "/#?"
@@ -73,6 +74,7 @@ instance Serializable ChatCommand where
 commandParser :: Parser ChatCommand
 commandParser =
   tellParser
+  <|> kickParser
   <|> (string "/quit" >> endOfInput >> return Quit)
   <|> (string "/close" >> return Close)
   <|> (string "/#?" >> return OnlineUsers)
@@ -83,15 +85,70 @@ tellParser = do
   skipSpace
   clientName <- takeWhile1 (isAlphaNum)
   skipSpace
-  message <- takeWhile (const True)
+  msg <- takeWhile (const True)
   endOfInput
-  return $ Tell clientName message
+  return $ Tell clientName msg
+
+kickParser :: Parser ChatCommand
+kickParser = do
+  _ <- string "/kick"
+  skipSpace
+  who <- takeWhile1 (isAlphaNum)
+  endOfInput
+  return $ Kick who
 
 data ChatResponse = Message {from :: ClientName, to :: ClientName, body:: Content}
                   | Connected ClientName
                   | Disconnected ClientName
                   | NrOnlineUsers Int -- | Response with the number of active users.
+                  | Error Content     -- | Report an error.
                   deriving (Eq, Show, Ord)
+
+instance Serializable ChatResponse where
+  serialize (Message sdr rvr msg) =
+    "/message " <> sdr <> " "<> rvr <> " " <> msg
+  serialize (Connected who) = "/connected " <> who
+  serialize (Disconnected who) = "/disconnected " <> who
+  serialize (NrOnlineUsers n) = "/# " <> C.pack (show n)
+
+  deserialize c =
+    case result of
+      Right x -> x
+      -- TODO: we need to consider what happens when we cannot deserialize.
+      Left e -> Error $ "unknown command: " <> C.pack e
+      where result = parseOnly responseParser c
+
+responseParser :: Parser ChatResponse
+responseParser =
+  messageParser
+  <|> whoParser "/connected" Connected
+  <|> whoParser "/disconnected" Disconnected
+
+messageParser :: Parser ChatResponse
+messageParser = do
+  _ <- string "/message"
+  skipSpace
+  sdr <- takeWhile1 (isAlphaNum)
+  skipSpace
+  rvr <- takeWhile1 (isAlphaNum)
+  skipSpace
+  msg <- takeWhile (const True)
+  return $ Message sdr rvr msg
+
+whoParser :: C.ByteString -> (C.ByteString -> ChatResponse) -> Parser ChatResponse
+whoParser prefix f = do
+  _ <- string prefix
+  skipSpace
+  who <- takeWhile1 (isAlphaNum)
+  endOfInput
+  return $ f who
+
+nrUsersParser :: Parser ChatResponse
+nrUsersParser = do
+  _ <- string "/#"
+  skipSpace
+  nr <- scientific
+  return $ NrOnlineUsers (Scientific.base10Exponent nr)
 
 isMessage :: ChatResponse -> Bool
 isMessage (Message _ _ _) = True

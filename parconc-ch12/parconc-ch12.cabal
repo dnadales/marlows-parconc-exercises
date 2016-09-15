@@ -33,6 +33,7 @@ library
                      , stm
                      , bytestring >= 0.10.6
                      , attoparsec >= 0.13
+                     , scientific >= 0.3.4
   default-language:    Haskell2010
 
 executable horde-app
