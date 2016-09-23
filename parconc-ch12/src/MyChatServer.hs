@@ -13,6 +13,7 @@ module MyChatServer
   , Content
   , isMessage
   , (!)
+  , receive
   , commandParser
   , Serializable (..)
   ) where
@@ -21,6 +22,8 @@ import           Config
 import           Control.Applicative
 import           Control.Concurrent
 import           Control.Concurrent.Async
+import           Control.Concurrent.STM
+import           Control.Concurrent.STM.TChan
 import           Control.Exception
 import           Control.Monad
 import           Data.Attoparsec.ByteString.Char8
@@ -47,10 +50,11 @@ data ChatCommand = Tell ClientName Content
                          -- messages will be sent.
                  | OnlineUsers -- | How many users are connected?
                  | Broadcast Content
+                 | SetName ClientName -- | Set a name for the current client.
                  deriving (Show)
 
 
--- TODO: use a serialization package.
+-- TODO: use a serialization library.
 class Serializable a where
   serialize :: a -> C.ByteString
   deserialize :: C.ByteString -> a
@@ -64,6 +68,7 @@ instance Serializable ChatCommand where
   serialize Close = "/close"
   serialize OnlineUsers = "/#?"
   serialize (Broadcast c) = c
+  serialize (SetName c) = "/setname " <> c
 
   deserialize c =
     case result of
@@ -78,6 +83,7 @@ commandParser =
   <|> (string "/quit" >> endOfInput >> return Quit)
   <|> (string "/close" >> return Close)
   <|> (string "/#?" >> return OnlineUsers)
+  <|> setNameParser
 
 tellParser :: Parser ChatCommand
 tellParser = do
@@ -97,6 +103,14 @@ kickParser = do
   endOfInput
   return $ Kick who
 
+setNameParser :: Parser ChatCommand
+setNameParser = do
+  _ <- string "/setname"
+  skipSpace
+  who <- takeWhile1 (isAlphaNum)
+  endOfInput
+  return $ SetName who
+
 data ChatResponse = Message {from :: ClientName, to :: ClientName, body:: Content}
                   | Connected ClientName
                   | Disconnected ClientName
@@ -110,6 +124,7 @@ instance Serializable ChatResponse where
   serialize (Connected who) = "/connected " <> who
   serialize (Disconnected who) = "/disconnected " <> who
   serialize (NrOnlineUsers n) = "/# " <> C.pack (show n)
+  serialize (Error c) = "/error " <> c
 
   deserialize c =
     case result of
@@ -157,6 +172,11 @@ isMessage _ = False
 -- | Send a chat command to the handle.
 (!) :: Handle -> ChatCommand -> IO ()
 h ! c = C.hPutStrLn h (serialize c)
+
+-- | Receive a message on the handle.
+receive :: Handle -> IO ChatResponse
+receive h  = liftM deserialize (C.hGetLine h)
+
 
 defaultDelay :: IO ()
 defaultDelay = threadDelay (10^6)
