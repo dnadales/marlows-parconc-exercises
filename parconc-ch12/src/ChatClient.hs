@@ -14,9 +14,10 @@ import           Network
 import           System.IO
 
 
-data ClientState = ClientState {
-  numClients :: Int -- Number of clients connected at the chat server.
-  }
+data ClientState =
+  ClientState { numClients :: Int -- | Number of clients connected at the chat
+                                  -- server.
+              }
 
 data ChatClient = ChatClient
   { ccTid     :: ThreadId
@@ -68,6 +69,7 @@ waitForNClients n cc= do
 -- | Disconnect the client from the server.
 disconnect :: ChatClient -> IO ()
 disconnect (ChatClient tId h _ _) = do
+  h ! Close
   hClose h
   killThread tId
 

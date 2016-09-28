@@ -24,17 +24,20 @@ import           Control.Concurrent
 import           Control.Concurrent.Async
 import           Control.Concurrent.STM
 import           Control.Concurrent.STM.TChan
+import           Control.Concurrent.STM.TChan.ReadOnly
 import           Control.Exception
 import           Control.Monad
 import           Data.Attoparsec.ByteString.Char8
-import qualified Data.ByteString.Char8            as C
+import qualified Data.ByteString.Char8                 as C
 import           Data.Char
+import qualified Data.Map                              as Map
 import           Data.Monoid
-import qualified Data.Scientific                  as Scientific
+import qualified Data.Scientific                       as Scientific
 import           Data.Word
 import           Network
-import           Prelude                          hiding (takeWhile)
+import           Prelude                               hiding (takeWhile)
 import           System.IO
+
 
 newtype ChatServer = MkChatServer ThreadId
 
@@ -43,15 +46,18 @@ type ClientName = C.ByteString
 
 data ChatCommand = Tell ClientName Content
                  | Kick ClientName
-                 | Quit -- | Quit the connection with the server, but leave the
-                        -- connection with the server open to receive more
-                        -- messages.
-                 | Close -- | Close the connection with the server. No more
-                         -- messages will be sent.
-                 | OnlineUsers -- | How many users are connected?
+                 | Quit                    -- | Quit the connection with the
+                                           -- server, but leave the connection
+                                           -- with the server open to receive
+                                           -- more messages.
+                 | Close                   -- | Close the connection with the
+                                           -- server. No more messages will be
+                                           -- sent.
+                 | OnlineUsers             -- | How many users are connected?
                  | Broadcast Content
-                 | SetName ClientName -- | Set a name for the current client.
-                 deriving (Show)
+                 | SetName ClientName      -- | Set a name for the current
+                                           -- client.
+                 deriving (Show, Eq)
 
 
 -- TODO: use a serialization library.
@@ -174,9 +180,8 @@ isMessage _ = False
 h ! c = C.hPutStrLn h (serialize c)
 
 -- | Receive a message on the handle.
-receive :: Handle -> IO ChatResponse
+receive :: (Serializable a) => Handle -> IO a
 receive h  = liftM deserialize (C.hGetLine h)
-
 
 defaultDelay :: IO ()
 defaultDelay = threadDelay (10^6)
@@ -204,28 +209,82 @@ waitForChatServer =
 stopChatServer :: ChatServer -> IO ()
 stopChatServer (MkChatServer tId) = killThread tId
 
-talk :: Handle -> IO ()
-talk h = do
+data ServerState =
+  ServerState { socket        :: Socket
+              , numClients    :: TVar Int -- | Number of clients connected at the
+                                     -- chat server.
+              , clients       :: TVar [Map.Map Handle ClientName]
+              , broadcastChan :: TChan ChatResponse
+              }
+
+data Client =
+  Client { clientHandle :: Handle
+          -- | Channel where we receive the messages for the client:
+         , clientChan   :: TChan ChatResponse
+         }
+
+-- | Associate the client name to the handle in the server state.
+addName :: Client -> ClientName -> ServerState -> IO ()
+addName = undefined
+
+-- | Return the name associated to the client for that handle.
+clientNameForHandle :: Handle -> ServerState -> IO (Maybe ClientName)
+clientNameForHandle = undefined
+
+-- | Broadcast a message to all clients. The client name specifies the sender
+-- of the message.
+broadcastMsg :: ClientName -> Content -> ServerState -> IO ()
+broadcastMsg = undefined
+
+talk :: Client -> ServerState -> IO ()
+talk c tv = do
+  let h = clientHandle c
+  cmd <- receive h
+  case cmd of
+    SetName name -> addName c name tv
+    Broadcast msg -> do
+      mClientName <- clientNameForHandle h tv
+      case mClientName of
+        Just clientName ->
+          broadcastMsg clientName msg tv
+        Nothing -> do
+          let hName = C.pack (show h)
+              errMsg = Error $ "no client name associated to handle " <> hName
+          atomically $ writeTChan (clientChan c) errMsg
+    Tell client msg -> undefined
+    OnlineUsers -> undefined -- Return the number of online users to the client.
+    Kick name -> undefined
+    Quit -> undefined
+    Close -> undefined
   putStrLn $ (show h) ++ " bla bla bla ..."
   defaultDelay
-  talk h
--- talk h = return ()
+  if cmd == Close then talk c tv else undefined -- cleanup if the message was close
 
 serve :: IO ()
 serve = withSocketsDo $ do
-  bracket acquireSocket releaseSocket doServe
+  bracket initializeServer terminateServer doServe
   where
-    acquireSocket = do
+    initializeServer = do
       putStrLn "Starting chat server"
-      listenOn Config.port
+      sock <- listenOn Config.port
+      numClientsTVar <- newTVarIO 0
+      clientsTVar <- newTVarIO empty
+      bChan <- newBroadcastTChanIO
+      return ServerState { socket = sock
+                         , numClients = numClientsTVar
+                         , clients = clientsTVar
+                         , broadcastChan = bChan
+                         }
 
-    releaseSocket socket = do
-      sClose socket
+    terminateServer state = do
+      sClose (socket state)
       putStrLn "Stopping chat server"
 
-    doServe socket = do
-      (h, host, port) <- accept socket
-      withAsync (talk h `finally` hClose h) (\_ -> doServe socket)
+    doServe state = do
+      (h, host, port) <- accept (socket state)
+      duppedChan <- atomically $ dupTChan (broadcastChan state)
+      let newClient = Client {clientHandle = h, clientChan = duppedChan}
+      withAsync (talk newClient state `finally` hClose h) (\_ -> doServe state)
 
     -- doServe socket = forever $ do
     --     (h, host, port) <- accept socket
