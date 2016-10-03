@@ -16,6 +16,7 @@ module MyChatServer
   , receive
   , commandParser
   , Serializable (..)
+  , serve
   ) where
 
 import           Config
@@ -24,20 +25,19 @@ import           Control.Concurrent
 import           Control.Concurrent.Async
 import           Control.Concurrent.STM
 import           Control.Concurrent.STM.TChan
-import           Control.Concurrent.STM.TChan.ReadOnly
 import           Control.Exception
 import           Control.Monad
 import           Data.Attoparsec.ByteString.Char8
-import qualified Data.ByteString.Char8                 as C
+import qualified Data.ByteString.Char8            as C
 import           Data.Char
-import qualified Data.Map                              as Map
+import qualified Data.Map                         as Map
+import           Data.Maybe
 import           Data.Monoid
-import qualified Data.Scientific                       as Scientific
+import qualified Data.Scientific                  as Scientific
 import           Data.Word
 import           Network
-import           Prelude                               hiding (takeWhile)
+import           Prelude                          hiding (takeWhile)
 import           System.IO
-
 
 newtype ChatServer = MkChatServer ThreadId
 
@@ -117,16 +117,17 @@ setNameParser = do
   endOfInput
   return $ SetName who
 
-data ChatResponse = Message {from :: ClientName, to :: ClientName, body:: Content}
+data ChatResponse = Message {from :: ClientName, body:: Content}
                   | Connected ClientName
                   | Disconnected ClientName
                   | NrOnlineUsers Int -- | Response with the number of active users.
                   | Error Content     -- | Report an error.
+                  | Terminate -- | Message used to terminate the client
                   deriving (Eq, Show, Ord)
 
 instance Serializable ChatResponse where
-  serialize (Message sdr rvr msg) =
-    "/message " <> sdr <> " "<> rvr <> " " <> msg
+  serialize (Message sdr msg) =
+    "/message " <> sdr <> " " <> msg
   serialize (Connected who) = "/connected " <> who
   serialize (Disconnected who) = "/disconnected " <> who
   serialize (NrOnlineUsers n) = "/# " <> C.pack (show n)
@@ -151,10 +152,8 @@ messageParser = do
   skipSpace
   sdr <- takeWhile1 (isAlphaNum)
   skipSpace
-  rvr <- takeWhile1 (isAlphaNum)
-  skipSpace
   msg <- takeWhile (const True)
-  return $ Message sdr rvr msg
+  return $ Message sdr msg
 
 whoParser :: C.ByteString -> (C.ByteString -> ChatResponse) -> Parser ChatResponse
 whoParser prefix f = do
@@ -172,11 +171,11 @@ nrUsersParser = do
   return $ NrOnlineUsers (Scientific.base10Exponent nr)
 
 isMessage :: ChatResponse -> Bool
-isMessage (Message _ _ _) = True
+isMessage (Message _ _) = True
 isMessage _ = False
 
 -- | Send a chat command to the handle.
-(!) :: Handle -> ChatCommand -> IO ()
+(!) :: (Serializable a) => Handle -> a -> IO ()
 h ! c = C.hPutStrLn h (serialize c)
 
 -- | Receive a message on the handle.
@@ -201,7 +200,7 @@ waitForChatServer =
     -- handleIO _ = defaultDelay >> waitForChatServer
     handleIO :: SomeException -> IO ()
     handleIO e = do
-      -- putStrLn ("error while waiting: " ++ (show e))
+      putStrLn ("error while waiting: " ++ (show e))
       defaultDelay
       waitForChatServer
 
@@ -211,9 +210,9 @@ stopChatServer (MkChatServer tId) = killThread tId
 
 data ServerState =
   ServerState { socket        :: Socket
-              , numClients    :: TVar Int -- | Number of clients connected at the
-                                     -- chat server.
-              , clients       :: TVar [Map.Map Handle ClientName]
+              -- | Socket where the server listens for messages.
+              -- , clients       :: TVar [Map.Map Handle ClientName]
+              , clientsTChans :: TVar (Map.Map ClientName (TChan ChatResponse))
               , broadcastChan :: TChan ChatResponse
               }
 
@@ -221,44 +220,149 @@ data Client =
   Client { clientHandle :: Handle
           -- | Channel where we receive the messages for the client:
          , clientChan   :: TChan ChatResponse
+         , clientName   :: TVar (Maybe ClientName)
+         , clientClosed :: TVar Bool
          }
 
 -- | Associate the client name to the handle in the server state.
-addName :: Client -> ClientName -> ServerState -> IO ()
-addName = undefined
+-- addName :: Client -> ClientName -> ServerState -> IO ()
+-- addName = undefined
 
 -- | Return the name associated to the client for that handle.
-clientNameForHandle :: Handle -> ServerState -> IO (Maybe ClientName)
-clientNameForHandle = undefined
+-- clientNameForHandle :: Handle -> ServerState -> IO (Maybe ClientName)
+-- clientNameForHandle = undefined
 
 -- | Broadcast a message to all clients. The client name specifies the sender
 -- of the message.
-broadcastMsg :: ClientName -> Content -> ServerState -> IO ()
-broadcastMsg = undefined
+-- broadcastMsg :: ClientName -> Content -> ServerState -> IO ()
+-- broadcastMsg cname msgBody sstate =
+--   atomically $
+--   writeTChan (broadcastChan sstate) (Message {from = cname, body = msgBody})
 
-talk :: Client -> ServerState -> IO ()
-talk c tv = do
-  let h = clientHandle c
+-- withClientName :: Handle -> ServerState -> (ClientName -> IO ()) -> IO ()
+-- withClientName h sstate fact = do
+--   mClientName <- clientNameForHandle h sstate
+--   case mClientName of
+--     Just clientName -> fact mClientName
+--     Nothing -> do
+--       let hName = C.pack (show h)
+--           errMsg = Error $ "no client name associated to handle " <> hName
+--       atomically $ writeTChan (clientChan c) errMsg
+
+-- | Process that constantly reads the channel and sends the responses via the
+-- handle.
+forward :: Client -> IO ()
+forward client = do
+  let h = clientHandle client
+      chan = clientChan client
+  resp <- atomically $ readTChan chan
+  case resp of
+    Terminate -> do
+      return ()
+    _ -> do
+      h ! resp
+      forward client
+
+-- | Process waits till the a name as been set, and then switches to the
+-- operational mode.
+waitForName :: Client -> ServerState -> IO ()
+waitForName client sstate = do
+  let h = clientHandle client
   cmd <- receive h
   case cmd of
-    SetName name -> addName c name tv
+    SetName name -> do
+      atomically $ do
+        writeTChan (broadcastChan sstate) (Connected name)
+        modifyTVar (clientsTChans sstate)
+          (\ccmap -> Map.insert name (clientChan client) ccmap)
+      atomically $ writeTVar (clientName client) (Just name)
+      talk client sstate
+    _ -> do
+      let hName = C.pack (show h)
+          errMsg = Error $ "no client name associated to handle " <> hName
+      atomically $ writeTChan (clientChan client) errMsg
+      waitForName client sstate
+
+talk :: Client -> ServerState -> IO ()
+talk client sstate = do
+  let h = clientHandle client
+  cmd <- receive h
+  mName <- readTVarIO (clientName client)
+  let name = fromJust mName -- If this throws an exception we want it, since it
+                            -- is an illegal state!
+  case cmd of
+    SetName otherName -> do
+      let errMsg = Error $ "name for this client already set (" <> name <> ")"
+      atomically $ writeTChan (clientChan client) errMsg
     Broadcast msg -> do
-      mClientName <- clientNameForHandle h tv
-      case mClientName of
-        Just clientName ->
-          broadcastMsg clientName msg tv
-        Nothing -> do
-          let hName = C.pack (show h)
-              errMsg = Error $ "no client name associated to handle " <> hName
-          atomically $ writeTChan (clientChan c) errMsg
-    Tell client msg -> undefined
-    OnlineUsers -> undefined -- Return the number of online users to the client.
-    Kick name -> undefined
-    Quit -> undefined
-    Close -> undefined
-  putStrLn $ (show h) ++ " bla bla bla ..."
-  defaultDelay
-  if cmd == Close then talk c tv else undefined -- cleanup if the message was close
+      atomically $
+        writeTChan (broadcastChan sstate) (Message {from = name, body = msg})
+    Tell otherClientName msg -> do
+      clientChsMap <- readTVarIO (clientsTChans sstate)
+      if (otherClientName `Map.member` clientChsMap)
+        then do
+          let clientCh = clientChsMap Map.! otherClientName
+          atomically $
+            writeTChan clientCh (Message {from = name, body = msg})
+        else do
+          let errMsg = Error $ "No client named " <> otherClientName
+          atomically $ writeTChan (clientChan client) errMsg
+    OnlineUsers -> do
+      clientChsMap <- readTVarIO (clientsTChans sstate)
+      let answer = NrOnlineUsers (Map.size clientChsMap)
+      atomically $ writeTChan (clientChan client) answer
+    Kick otherClientName -> do
+      clientChsMap <- readTVarIO (clientsTChans sstate)
+      if (otherClientName `Map.member` clientChsMap)
+        then do
+          let clientCh = clientChsMap Map.! otherClientName
+          atomically $
+            writeTChan clientCh Terminate
+        else do
+          let errMsg = Error $ "No client named " <> otherClientName
+          atomically $ writeTChan (clientChan client) errMsg
+    Close ->
+      atomically $ writeTVar (clientClosed client) True
+    Quit -> atomically $ writeTChan (clientChan client) Terminate
+  talk client sstate
+
+waitForClose :: Client -> IO ()
+waitForClose client = do
+  let h = clientHandle client
+  cmd <- receive h
+  case cmd of
+    Close -> atomically $ writeTVar (clientClosed client) True
+    otherwise -> do
+      let errMsg = Error $
+                   "Command " <> (serialize cmd)
+                    <> " sent after client has quitted."
+      atomically $ writeTChan (clientChan client) Terminate
+      waitForClose client
+
+forwardForever :: Client -> IO ()
+forwardForever client = forever $ do
+  let h = clientHandle client
+      chan = clientChan client
+  resp <- atomically $ readTChan chan
+  h ! resp
+  forwardForever client
+
+initThread :: Client -> ServerState -> IO ()
+initThread client sstate = do
+  forward client `race` waitForName client sstate
+  -- | Notify to all the other clients that this client has terminated.
+  -- | TODO: I think we don't need to write back the variable (check in
+  -- Marlow's book).
+  mName <- readTVarIO (clientName client)
+  case mName of
+    Nothing -> return () -- No need to notify, since no name was set.
+    Just name ->
+      atomically $ writeTChan (broadcastChan sstate) (Disconnected name)
+  closed <- readTVarIO (clientClosed client)
+  if (closed)
+    then do forwardForever client `race` waitForClose client
+            return ()
+    else return ()
 
 serve :: IO ()
 serve = withSocketsDo $ do
@@ -267,12 +371,10 @@ serve = withSocketsDo $ do
     initializeServer = do
       putStrLn "Starting chat server"
       sock <- listenOn Config.port
-      numClientsTVar <- newTVarIO 0
-      clientsTVar <- newTVarIO empty
+      chansMVar <- newTVarIO Map.empty
       bChan <- newBroadcastTChanIO
       return ServerState { socket = sock
-                         , numClients = numClientsTVar
-                         , clients = clientsTVar
+                         , clientsTChans = chansMVar
                          , broadcastChan = bChan
                          }
 
@@ -283,8 +385,15 @@ serve = withSocketsDo $ do
     doServe state = do
       (h, host, port) <- accept (socket state)
       duppedChan <- atomically $ dupTChan (broadcastChan state)
-      let newClient = Client {clientHandle = h, clientChan = duppedChan}
-      withAsync (talk newClient state `finally` hClose h) (\_ -> doServe state)
+      nameTV <- newTVarIO Nothing
+      closedTV <- newTVarIO False
+      let newClient = Client { clientHandle = h
+                             , clientChan = duppedChan
+                             , clientName = nameTV
+                             , clientClosed = closedTV }
+      withAsync
+        (initThread newClient state `finally` hClose h)
+        (\_ -> doServe state)
 
     -- doServe socket = forever $ do
     --     (h, host, port) <- accept socket

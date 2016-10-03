@@ -37,6 +37,14 @@ library
                      , privileged-concurrency >= 0.3
   default-language:    Haskell2010
 
+executable chat-client-app
+  hs-source-dirs:      app
+  main-is:             ChatClientApp.hs
+  ghc-options:         -threaded -rtsopts -with-rtsopts=-N
+  build-depends:       base
+                     , parconc-ch12
+  default-language:    Haskell2010
+  
 executable horde-app
   hs-source-dirs:      app
   main-is:             HordeApp.hs
